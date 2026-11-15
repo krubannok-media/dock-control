@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OBS Control Deck — ระบบควบคุม OBS Studio (WebSocket v5)</title>
+  <style>
+    /* ==========================================================================
+       1. CSS DESIGN TOKENS & RESET (STUDIO DARK THEME)
+       ========================================================================== */
+    :root {
+      --bg-app: #090b10;
+      --bg-header: #10141d;
+      --bg-sidebar: #121621;
+      --bg-card: #181e2c;
+      --bg-card-hover: #1f2738;
+      --bg-input: #0d1018;
+      --bg-canvas-wrap: #07090d;
+
+      --border-subtle: #22293a;
+      --border-strong: #323d56;
+      --border-focus: #3b82f6;
+
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --accent-cyan: #06b6d4;
+      --accent-purple: #8b5cf6;
+      --accent-amber: #f59e0b;
+      --accent-emerald: #10b981;
+      --accent-emerald-glow: rgba(16, 185, 129, 0.35);
+      --accent-red: #ef4444;
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --font-sans: 'Inter', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-app);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 19, 29, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2b354b;
+      border-radius: 99px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3d4b69;
+    }
+
+    button, input, select, textarea {
+      font-family: inherit;
+      font-size: inherit;
+      color: inherit;
+    }
+
+    button {
+      cursor: pointer;
+      border: 1px solid transparent;
+      background: none;
+      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    }
+
+    button:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 6px 9px;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+
+    input[type="color"] {
+      width: 100%;
+      height: 32px;
+      padding: 2px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+
+    /* ==========================================================================
+       2. APP SHELL & TOP HEADER BAR
+       ========================================================================== */
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .top-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 54px;
+      padding: 6px 14px;
+      background-color: var(--bg-header);
+      border-bottom: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+      z-index: 50;
+      flex-wrap: wrap;
+    }
+
+    .header-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .brand-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-right: 6px;
+    }
+
+    .brand-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #2563eb, #06b6d4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4);
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    .brand-sub {
+      font-size: 10px;
+      color: var(--text-secondary);
+      display: block;
+      line-height: 1.1;
+    }
+
+    /* Badges & Status Pills */
+    .pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 99px;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .pill-badge.interactive:hover {
+      background-color: var(--bg-card-hover);
+      border-color: var(--border-strong);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .status-dot.connected {
+      background-color: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    .status-dot.connecting {
+      background-color: var(--accent-amber);
+      animation: pulseDot 1s infinite alternate;
+    }
+
+    .status-dot.error {
+      background-color: var(--accent-red);
+    }
+
+    @keyframes pulseDot {
+      from { opacity: 0.4; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1.15); }
+    }
+
+    .scene-pill {
+      background: rgba(59, 130, 246, 0.12);
+      border-color: rgba(59, 130, 246, 0.35);
+      color: #93c5fd;
+    }
+
+    /* WebSocket Connection Bar Controls */
+    .ws-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-input);
+      padding: 3px 6px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .ws-controls input {
+      height: 28px;
+      padding: 4px 8px;
+      font-size: 12px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .ws-controls input:focus {
+      border-color: var(--border-focus);
+      background: var(--bg-input);
+    }
+
+    .ws-url-input {
+      width: 155px !important;
+      font-family: var(--font-mono);
+    }
+
+    .ws-pass-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 115px;
+    }
+
+    .ws-pass-wrap input {
+      padding-right: 26px;
+    }
+
+    .ws-eye-btn {
+      position: absolute;
+      right: 4px;
+      padding: 2px 4px;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .ws-eye-btn:hover {
+      color: var(--text-primary);
+    }
+
+    /* Header Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 11px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 12px;
+      white-space: nowrap;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+    }
+
+    .btn:hover:not(:disabled) {
+      background-color: var(--bg-card-hover);
+      border-color: var(--border-strong);
+    }
+
+    .btn-primary {
+      background-color: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--accent-blue-hover);
+      border-color: var(--accent-blue-hover);
+    }
+
+    .btn-danger {
+      background-color: rgba(239, 68, 68, 0.16);
+      border-color: rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background-color: rgba(239, 68, 68, 0.28);
+      color: #fff;
+    }
+
+    .btn-mode-edit {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.5);
+      color: #fcd34d;
+    }
+
+    .btn-mode-live {
+      background: linear-gradient(135deg, #059669, #10b981);
+      border-color: #34d399;
+      color: #fff;
+      box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-icon-only {
+      padding: 6px 8px;
+    }
+
+    /* Mixed Content Alert Banner */
+    .mixed-content-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 16px;
+      background: rgba(239, 68, 68, 0.18);
+      border-bottom: 1px solid rgba(239, 68, 68, 0.45);
+      color: #fecaca;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .mixed-content-banner.visible {
+      display: flex;
+    }
+
+    /* ==========================================================================
+       3. 3-COLUMN WORKSPACE LAYOUT
+       ========================================================================== */
+    .workspace {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .sidebar-left {
+      width: 268px;
+      flex-shrink: 0;
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 12px;
+      gap: 14px;
+      z-index: 20;
+    }
+
+    .sidebar-right {
+      width: 324px;
+      flex-shrink: 0;
+      background-color: var(--bg-sidebar);
+      border-left: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 12px;
+      gap: 12px;
+      z-index: 20;
+    }
+
+    .sidebar-left.collapsed,
+    .sidebar-right.collapsed {
+      display: none;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 8px;
+    }
+
+    .palette-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .palette-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: var(--radius-md);
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      text-align: left;
+      color: var(--text-primary);
+    }
+
+    .palette-btn:hover {
+      background-color: var(--bg-card-hover);
+      border-color: var(--accent-blue);
+      transform: translateY(-1px);
+    }
+
+    .palette-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 15px;
+      background: rgba(59, 130, 246, 0.14);
+      color: #60a5fa;
+    }
+
+    .palette-icon.pg {
+      background: rgba(139, 92, 246, 0.16);
+      color: #c4b5fd;
+    }
+
+    .palette-icon.move {
+      background: rgba(6, 182, 212, 0.16);
+      color: #67e8f9;
+    }
+
+    .palette-icon.grp {
+      background: rgba(148, 163, 184, 0.14);
+      color: #cbd5e1;
+    }
+
+    .palette-icon.dash {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+    }
+
+    .palette-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .palette-name {
+      font-weight: 600;
+      font-size: 12.5px;
+      color: var(--text-primary);
+    }
+
+    .palette-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .external-guide-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      background: rgba(139, 92, 246, 0.14);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      color: #ddd6fe;
+      text-decoration: none;
+      font-size: 11.5px;
+      font-weight: 600;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .external-guide-link:hover {
+      background: rgba(139, 92, 246, 0.25);
+      border-color: #a78bfa;
+      color: #fff;
+    }
+
+    /* ==========================================================================
+       4. CENTER CANVAS & MINI-MAP
+       ========================================================================== */
+    .center-stage {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-canvas-wrap);
+    }
+
+    .canvas-scroll-area {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      padding: 28px;
+      position: relative;
+    }
+
+    .canvas-board {
+      position: relative;
+      background-color: #0e121b;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+      transform-origin: 0 0;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .canvas-board.show-grid {
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
+    /* ==========================================================================
+       5. WIDGET CARDS & STRICT Z-INDEX LAYERING
+       ========================================================================== */
+    .widget-item {
+      position: absolute;
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+      touch-action: none;
+    }
+
+    /* Edit Mode Interactions */
+    .canvas-board.mode-edit .widget-item {
+      cursor: grab;
+    }
+
+    .canvas-board.mode-edit .widget-item:active {
+      cursor: grabbing;
+    }
+
+    .canvas-board.mode-edit .widget-item.selected {
+      outline: 2px solid var(--accent-cyan);
+      outline-offset: 2px;
+    }
+
+    /* Group Panel Strict Layering (Always at lowest z-index: 1) */
+    .widget-item.type-group {
+      z-index: 1 !important;
+      border-style: solid;
+      border-width: 1px;
+      padding: 12px;
+    }
+
+    /* In Live Mode, Group Panel ignores pointer events so buttons inside never get blocked */
+    .canvas-board.mode-live .widget-item.type-group {
+      pointer-events: none !important;
+    }
+
+    .group-panel-label {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      font-weight: 700;
+      pointer-events: none;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    /* Regular Interactive Widgets (Always above Group Panel: z-index >= 10) */
+    .widget-item:not(.type-group) {
+      z-index: 10;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      overflow: hidden;
+    }
+
+    .canvas-board.mode-edit .widget-item:not(.type-group).selected {
+      z-index: 25;
+    }
+
+    /* Resize Handle (Edit Mode Only) */
+    .resize-handle {
+      display: none;
+      position: absolute;
+      right: 2px;
+      bottom: 2px;
+      width: 16px;
+      height: 16px;
+      cursor: nwse-resize;
+      z-index: 30;
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding: 2px;
+      color: var(--accent-cyan);
+    }
+
+    .canvas-board.mode-edit .widget-item:hover .resize-handle,
+    .canvas-board.mode-edit .widget-item.selected .resize-handle {
+      display: flex;
+    }
+
+    .widget-edit-badge {
+      display: none;
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.65);
+      color: #cbd5e1;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .canvas-board.mode-edit .widget-item:hover .widget-edit-badge,
+    .canvas-board.mode-edit .widget-item.selected .widget-edit-badge {
+      display: inline-block;
+    }
+
+    /* Action / PlayGroup / Move Button Styling & SHOW/HIDE Effects */
+    .action-btn-body {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px 12px;
+      text-align: center;
+      position: relative;
+    }
+
+    .canvas-board.mode-live .widget-item.is-clickable {
+      cursor: pointer;
+    }
+
+    .canvas-board.mode-live .widget-item.is-clickable:active {
+      transform: scale(0.96);
+    }
+
+    .status-led-bar {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 99px;
+      background: rgba(0, 0, 0, 0.35);
+      letter-spacing: 0.03em;
+    }
+
+    .status-led-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #64748b;
+    }
+
+    /* Active SHOW State Glow Effect */
+    .widget-item.state-show {
+      border-color: #10b981 !important;
+      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.65), 0 0 20px var(--accent-emerald-glow) !important;
+    }
+
+    .widget-item.state-show .status-led-dot {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+
+    .widget-item.state-show .status-led-text {
+      color: #6ee7b7;
+    }
+
+    /* Inactive HIDE State Dimmed Effect */
+    .widget-item.state-hide {
+      opacity: 0.78;
+      border-color: rgba(148, 163, 184, 0.18) !important;
+    }
+
+    .widget-item.state-hide .status-led-text {
+      color: #94a3b8;
+    }
+
+    .widget-main-label {
+      font-weight: 700;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .widget-sub-target {
+      font-size: 11px;
+      opacity: 0.75;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Text Button Widget */
+    .text-btn-body {
+      width: 100%;
+      height: 100%;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .text-btn-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-weight: 700;
+    }
+
+    .text-btn-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .text-btn-row input {
+      flex: 1;
+      min-width: 0;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: inherit;
+    }
+
+    .text-btn-confirm {
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      background: #10b981;
+      color: #052e16;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .text-btn-confirm:hover {
+      background: #34d399;
+    }
+
+    /* Text Preview Widget */
+    .text-preview-body {
+      width: 100%;
+      height: 100%;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .text-preview-caption {
+      font-size: 11px;
+      opacity: 0.72;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .text-preview-value {
+      font-weight: 700;
+      word-break: break-word;
+      line-height: 1.3;
+    }
+
+    /* Number Button Widget */
+    .number-btn-body {
+      width: 100%;
+      height: 100%;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .number-btn-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .num-step-btn {
+      width: 38px;
+      height: 34px;
+      border-radius: var(--radius-sm);
+      font-size: 18px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: inherit;
+      flex-shrink: 0;
+    }
+
+    .num-step-btn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .num-direct-input {
+      flex: 1;
+      min-width: 0;
+      height: 34px;
+      text-align: center;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      background: rgba(0, 0, 0, 0.35) !important;
+      border: 1px solid rgba(255, 255, 255, 0.18) !important;
+      color: inherit !important;
+    }
+
+    .num-set-btn {
+      height: 34px;
+      padding: 0 11px;
+      border-radius: var(--radius-sm);
+      background: var(--accent-blue);
+      color: #fff;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .num-set-btn:hover {
+      background: var(--accent-blue-hover);
+    }
+
+    /* Dashboard Panel Widget */
+    .dashboard-body {
+      width: 100%;
+      height: 100%;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .dashboard-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      flex-shrink: 0;
+    }
+
+    .dashboard-title {
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dashboard-counter {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: rgba(16, 185, 129, 0.18);
+      color: #6ee7b7;
+      font-weight: 700;
+    }
+
+    .dashboard-list {
+      flex: 1;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 6px;
+      align-content: start;
+    }
+
+    .dash-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 11.5px;
+    }
+
+    .dash-item-row.is-show {
+      border-color: rgba(16, 185, 129, 0.45);
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    .dash-item-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      font-weight: 600;
+    }
+
+    .dash-item-name span.truncate {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dash-state-pill {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .dash-state-pill.show {
+      background: #10b981;
+      color: #052e16;
+    }
+
+    .dash-state-pill.hide {
+      background: #334155;
+      color: #cbd5e1;
+    }
+
+    /* ==========================================================================
+       6. INTERACTIVE MINI-MAP (BOTTOM-RIGHT CORNER)
+       ========================================================================== */
+    .minimap-container {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      z-index: 45;
+      background: rgba(14, 18, 27, 0.92);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 8px;
+      box-shadow: var(--shadow-panel);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      user-select: none;
+    }
+
+    .minimap-container.hidden {
+      display: none;
+    }
+
+    .minimap-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      letter-spacing: 0.03em;
+    }
+
+    .minimap-stage {
+      position: relative;
+      background: #07090e;
+      border: 1px solid #263044;
+      border-radius: 4px;
+      overflow: hidden;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .minimap-block {
+      position: absolute;
+      border-radius: 1.5px;
+      pointer-events: none;
+    }
+
+    .minimap-block.is-group {
+      background: rgba(148, 163, 184, 0.14);
+      border: 1px dashed rgba(148, 163, 184, 0.35);
+    }
+
+    .minimap-block.is-widget {
+      background: #3b82f6;
+      opacity: 0.85;
+    }
+
+    .minimap-block.is-show {
+      background: #10b981;
+      box-shadow: 0 0 4px #10b981;
+      opacity: 1;
+    }
+
+    .minimap-block.is-hide {
+      background: #475569;
+      opacity: 0.65;
+    }
+
+    .minimap-block.is-selected {
+      outline: 1px solid #22d3ee;
+    }
+
+    .minimap-viewport {
+      position: absolute;
+      border: 1.5px solid #22d3ee;
+      background: rgba(34, 211, 238, 0.14);
+      border-radius: 2px;
+      cursor: grab;
+    }
+
+    .minimap-viewport:active {
+      cursor: grabbing;
+    }
+
+    /* ==========================================================================
+       7. RIGHT INSPECTOR & FORM CONTROLS
+       ========================================================================== */
+    .inspector-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .form-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .preset-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      padding: 8px 9px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      text-align: left;
+    }
+
+    .preset-btn:hover {
+      border-color: var(--accent-blue);
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .preset-btn.active {
+      border-color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.14);
+    }
+
+    .preset-name {
+      font-weight: 600;
+      font-size: 11.5px;
+      color: var(--text-primary);
+    }
+
+    .preset-dim {
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+    }
+
+    .checkbox-row input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      accent-color: var(--accent-blue);
+      cursor: pointer;
+    }
+
+    .dash-checklist {
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .info-hint {
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: rgba(59, 130, 246, 0.09);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 7px 9px;
+      line-height: 1.4;
+    }
+
+    /* ==========================================================================
+       8. TOAST NOTIFICATIONS & INLINE MODAL DIALOG (NO alert/confirm)
+       ========================================================================== */
+    .toast-stack {
+      position: fixed;
+      top: 64px;
+      right: 16px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 340px;
+      pointer-events: none;
+    }
+
+    .toast-item {
+      pointer-events: auto;
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      background: #181e2c;
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+      font-size: 12.5px;
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      animation: toastIn 0.2s ease;
+    }
+
+    .toast-item.success { border-left: 4px solid var(--accent-emerald); }
+    .toast-item.error { border-left: 4px solid var(--accent-red); }
+    .toast-item.warn { border-left: 4px solid var(--accent-amber); }
+    .toast-item.info { border-left: 4px solid var(--accent-blue); }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(16px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 6, 10, 0.72);
+      backdrop-filter: blur(4px);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-box {
+      width: 100%;
+      max-width: 400px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      box-shadow: var(--shadow-panel);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .modal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* Main Settings Popup Modal */
+    .settings-modal-box {
+      width: 100%;
+      max-width: 520px;
+      max-height: 88vh;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-panel);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: modalPopIn 0.16s ease;
+    }
+
+    @keyframes modalPopIn {
+      from { opacity: 0; transform: scale(0.96) translateY(-6px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .settings-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .settings-modal-header-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .modal-close-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      font-size: 14px;
+    }
+
+    .modal-close-btn:hover {
+      background: rgba(239, 68, 68, 0.18);
+      border-color: rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+    }
+
+    .settings-modal-body {
+      padding: 16px 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .inspector-empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px 16px;
+      gap: 10px;
+      color: var(--text-secondary);
+      border: 1px dashed var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: rgba(13, 16, 24, 0.45);
+    }
+
+    .inspector-empty-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(59, 130, 246, 0.12);
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    /* Responsive Drawer Adjustments for Narrow OBS Docks */
+    @media (max-width: 960px) {
+      .sidebar-left {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        box-shadow: var(--shadow-panel);
+      }
+      .sidebar-right {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        box-shadow: var(--shadow-panel);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- ======================================================================
+         TOP HEADER BAR
+         ====================================================================== -->
+    <header class="top-header">
+      <div class="header-group">
+        <button class="btn btn-icon-only" id="btn-toggle-left" title="เปิด/ปิดแถบเพิ่มปุ่มด้านซ้าย">☰</button>
+        <div class="brand-box">
+          <div class="brand-icon" aria-hidden="true">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+              <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+              <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+              <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+              <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">OBS Control Deck</div>
+            <span class="brand-sub">WebSocket v5 Studio Panel</span>
+          </div>
+        </div>
+
+        <div class="pill-badge scene-pill" id="active-scene-badge" title="Scene ที่กำลังใช้งานใน OBS">
+          <span>🎬 Scene:</span>
+          <strong id="active-scene-name">ยังไม่ได้เชื่อมต่อ</strong>
+        </div>
+
+        <div class="pill-badge" id="ws-status-badge">
+          <span class="status-dot" id="ws-status-dot"></span>
+          <span id="ws-status-text">ไม่ได้เชื่อมต่อ</span>
+        </div>
+      </div>
+
+      <!-- OBS WebSocket v5 Connection Controls -->
+      <div class="header-group">
+        <div class="ws-controls">
+          <input type="text" id="ws-url" class="ws-url-input" value="ws://localhost:4455" placeholder="ws://localhost:4455" title="OBS WebSocket URL" />
+          <div class="ws-pass-wrap">
+            <input type="password" id="ws-password" placeholder="รหัสผ่าน" title="รหัสผ่าน OBS WebSocket" />
+            <button type="button" class="ws-eye-btn" id="btn-toggle-pass" title="แสดง/ซ่อนรหัสผ่าน">👁</button>
+          </div>
+          <button type="button" class="btn btn-primary" id="btn-ws-connect">เชื่อมต่อ OBS</button>
+        </div>
+
+        <button type="button" class="btn" id="btn-sync-obs" disabled title="ซิงค์ข้อมูล Scene, Group, Source และ Filter จาก OBS">
+          🔄 ซิงค์ OBS
+        </button>
+
+        <button type="button" class="btn" id="btn-open-main-settings" title="เปิดหน้าต่างตั้งค่าหลักและขนาด Canvas">
+          ⚙️ ตั้งค่าหลัก
+        </button>
+
+        <button type="button" class="pill-badge interactive" id="btn-canvas-size-badge" title="คลิกเพื่อเปิดหน้าตั้งค่าขนาด Canvas">
+          📐 <span id="canvas-size-label">1920 × 1080</span>
+        </button>
+
+        <button type="button" class="btn btn-mode-edit" id="btn-toggle-mode" title="สลับระหว่างโหมดแก้ไขและโหมดใช้งานจริง">
+          ✏️ โหมดแก้ไข (Edit)
+        </button>
+
+        <button type="button" class="btn" id="btn-export-json" title="ส่งออกการตั้งค่าเป็นไฟล์ JSON">📤 Export</button>
+        <button type="button" class="btn" id="btn-import-json" title="นำเข้าการตั้งค่าจากไฟล์ JSON">📥 Import</button>
+        <input type="file" id="file-import-input" accept=".json" style="display:none" />
+        <button class="btn btn-icon-only" id="btn-toggle-right" title="เปิด/ปิดแถบตั้งค่าปุ่มด้านขวา">🎛️</button>
+      </div>
+    </header>
+
+    <!-- HTTPS Mixed-Content Alert Banner -->
+    <div class="mixed-content-banner" id="mixed-content-banner">
+      <div>
+        ⚠️ <strong>ตรวจพบการเปิดผ่าน HTTPS ร่วมกับ ws:// (Mixed Content):</strong> เบราว์เซอร์จะบล็อกการเชื่อมต่อ <code>ws://</code> เมื่อหน้าเว็บเปิดผ่าน <code>https://</code> กรุณาดาวน์โหลดไฟล์ HTML นี้ไปเปิดในเครื่องโดยตรง (<code>file://</code>) หรือใช้ <code>wss://</code>
+      </div>
+      <button type="button" class="btn btn-danger" id="btn-dismiss-mixed">ปิดแจ้งเตือน</button>
+    </div>
+
+    <!-- ======================================================================
+         3-COLUMN MAIN WORKSPACE
+         ====================================================================== -->
+    <div class="workspace">
+      <!-- LEFT SIDEBAR: WIDGET PALETTE -->
+      <aside class="sidebar-left" id="sidebar-left">
+        <!-- Category 1: General -->
+        <div>
+          <div class="section-title">
+            <span>General — ปุ่มทั่วไป</span>
+          </div>
+          <div class="palette-grid">
+            <button type="button" class="palette-btn" data-add-type="group">
+              <div class="palette-icon grp">🗂️</div>
+              <div class="palette-info">
+                <span class="palette-name">Group Panel</span>
+                <span class="palette-desc">พื้นหลังจัดกลุ่ม (อยู่ชั้นหลังสุด)</span>
+              </div>
+            </button>
+
+            <button type="button" class="palette-btn" data-add-type="dashboard">
+              <div class="palette-icon dash">📊</div>
+              <div class="palette-info">
+                <span class="palette-name">Dashboard Panel</span>
+                <span class="palette-desc">ดูสถานะ SHOW/HIDE ของปุ่มที่เลือก</span>
+              </div>
+            </button>
+
+            <button type="button" class="palette-btn" data-add-type="action">
+              <div class="palette-icon">⚡</div>
+              <div class="palette-info">
+                <span class="palette-name">Action Button</span>
+                <span class="palette-desc">Show / Hide / Toggle Source &amp; Group</span>
+              </div>
+            </button>
+
+            <button type="button" class="palette-btn" data-add-type="text_btn">
+              <div class="palette-icon">✍️</div>
+              <div class="palette-info">
+                <span class="palette-name">Text Button</span>
+                <span class="palette-desc">ช่องพิมพ์ข้อความ + ปุ่มยืนยันลง OBS</span>
+              </div>
+            </button>
+
+            <button type="button" class="palette-btn" data-add-type="text_preview">
+              <div class="palette-icon">👁️‍🗨️</div>
+              <div class="palette-info">
+                <span class="palette-name">Text Preview</span>
+                <span class="palette-desc">แสดงข้อความสดที่ดึงจาก OBS</span>
+              </div>
+            </button>
+
+            <button type="button" class="palette-btn" data-add-type="number_btn">
+              <div class="palette-icon">🔢</div>
+              <div class="palette-info">
+                <span class="palette-name">Number Button</span>
+                <span class="palette-desc">ปุ่ม + / - และช่อง Set ตัวเลขลง OBS</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Category 2: PlayGroup - JAMORNz -->
+        <div>
+          <div class="section-title">
+            <span>PlayGroup - JAMORNz</span>
+          </div>
+          <div class="palette-grid">
+            <a
+              href="https://jamornz.com/dashboard/plugins"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="external-guide-link"
+              title="เปิดหน้าคู่มือและดาวน์โหลดปลั๊กอิน PlayGroup ของ JAMORNz"
+            >
+              <span>📖 คู่มือปลั๊กอิน PlayGroup (JAMORNz)</span>
+              <span>↗</span>
+            </a>
+
+            <button type="button" class="palette-btn" data-add-type="playgroup">
+              <div class="palette-icon pg">🎭</div>
+              <div class="palette-info">
+                <span class="palette-name">Action Button (PlayGroup)</span>
+                <span class="palette-desc">Show / Hide / Toggle Group ผ่าน Vendor</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Category 3: Move Transition Plugin -->
+        <div>
+          <div class="section-title">
+            <span>Move Transition Plugin</span>
+          </div>
+          <div class="palette-grid">
+            <button type="button" class="palette-btn" data-add-type="move">
+              <div class="palette-icon move">🎞️</div>
+              <div class="palette-info">
+                <span class="palette-name">Action Button (Move Filter)</span>
+                <span class="palette-desc">สั่ง Activate Filter Show / Hide / Toggle</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER CANVAS AREA -->
+      <main class="center-stage">
+        <div class="canvas-scroll-area" id="canvas-scroll-area">
+          <div class="canvas-board show-grid mode-edit" id="canvas-board"></div>
+        </div>
+
+        <!-- Bottom-Right Interactive Mini-Map -->
+        <div class="minimap-container" id="minimap-container">
+          <div class="minimap-header">
+            <span>🗺️ MINI-MAP</span>
+            <span id="minimap-scale-info">1920×1080</span>
+          </div>
+          <div class="minimap-stage" id="minimap-stage">
+            <div class="minimap-viewport" id="minimap-viewport"></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- RIGHT SIDEBAR: INSPECTOR & CANVAS SETTINGS -->
+      <aside class="sidebar-right" id="sidebar-right">
+        <!-- Content rendered dynamically via renderInspector() -->
+      </aside>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-stack" id="toast-stack"></div>
+
+  <!-- Main Settings Popup Modal (แยกจากแถบตั้งค่าปุ่มด้านขวา) -->
+  <div class="modal-backdrop" id="main-settings-modal" role="dialog" aria-modal="true" aria-labelledby="main-settings-modal-title">
+    <div class="settings-modal-box">
+      <div class="settings-modal-header">
+        <div class="settings-modal-header-title" id="main-settings-modal-title">
+          <span>⚙️</span>
+          <span>ตั้งค่าหลัก &amp; พื้นที่วางปุ่ม (Main Settings)</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-main-settings" title="ปิดหน้าต่างตั้งค่า (Esc)">✕</button>
+      </div>
+      <div class="settings-modal-body" id="main-settings-modal-body">
+        <!-- Rendered dynamically by renderMainSettingsModal() -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Non-Blocking Confirm Modal (Replaces native confirm/alert) -->
+  <div class="modal-backdrop" id="confirm-modal">
+    <div class="modal-box">
+      <div class="modal-title" id="confirm-modal-title">ยืนยันการดำเนินการ</div>
+      <div id="confirm-modal-message" style="color: var(--text-secondary); font-size: 13px;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="confirm-modal-cancel">ยกเลิก</button>
+        <button type="button" class="btn btn-danger" id="confirm-modal-ok">ยืนยัน</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- External JavaScript File -->
+  <script src="app.js" defer></script>
+</body>
+</html>
